@@ -440,7 +440,7 @@ namespace Cerberus.Logic
 
             for (int i = 0; i < switchCount; i++)
             {
-                var scriptString = GetString((int)Reader.GetPosition());
+                var scriptString = GetString((int)Reader.GetPosition() + 2); //+2 as that is where the stringtable points to it
                 string switchString;
 
                 // For Bo3 it seems the only way to check if it's a string
