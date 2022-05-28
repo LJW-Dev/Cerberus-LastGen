@@ -23,6 +23,7 @@ using Microsoft.Win32;
 using System.Globalization;
 using System.Threading;
 using System.Diagnostics;
+using BigEndianBinaryReader;
 
 namespace Cerberus.UI
 {
@@ -46,7 +47,6 @@ namespace Cerberus.UI
         /// </summary>
         private readonly Dictionary<string, Dictionary<uint, string>> HashTables = new Dictionary<string, Dictionary<uint, string>>()
         {
-            { "BlackOps2", new Dictionary<uint, string>() },
             { "BlackOps3", new Dictionary<uint, string>() },
         };
 
@@ -72,17 +72,6 @@ namespace Cerberus.UI
                     Disassembly.SyntaxHighlighting = Decompiler.SyntaxHighlighting;
                 }
             }
-
-            // Check for Updates
-            new Thread(() =>
-            {
-                if (HydraUpdater.CheckForUpdates(Assembly.GetExecutingAssembly().GetName().Version))
-                {
-                    var result = MessageBox.Show("A new version of Cerberus is available, do you want to download it now?", "Cerberus | Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                    if (result == MessageBoxResult.Yes)
-                        Process.Start("https://github.com/Scobalula/Cerberus-Repo/releases");
-                }
-            }).Start();
 
             ScriptList.ItemsSource = ScriptFiles;
             LoadHashTables();
@@ -111,7 +100,9 @@ namespace Cerberus.UI
                     {
                         Disassembly.Text = script.Disassemble();
                         Decompiler.Text  = script.Decompile();
-                        HexView.Stream = (MemoryStream)script.Reader.BaseStream;
+                        //HexView.Stream = new MemoryStream();
+                        //script.Reader.GetBaseStream().CopyTo(HexView.Stream);
+                        
                     }
                     catch(Exception ex)
                     {
@@ -141,40 +132,29 @@ namespace Cerberus.UI
             LogIt("Loading hash tables");
             foreach (var hashTable in HashTables)
             {
-                try
+                if (!File.Exists(hashTable.Key + ".txt"))
+                    continue;
+
+                string[] lines = File.ReadAllLines(hashTable.Key + ".txt");
+                LogIt("Loading " + hashTable.Key + ".txt");
+                foreach (string line in lines)
                 {
-                    string[] lines = File.ReadAllLines(hashTable.Key + ".txt");
-                    LogIt("Loading " + hashTable.Key + ".txt");
-                    foreach (string line in lines)
+                    string lineTrim = line.Trim();
+
+                    // Ignore comment lines
+                    if (!lineTrim.StartsWith("#"))
                     {
-                        try
+                        string[] lineSplit = lineTrim.Split(',');
+
+                        if (lineSplit.Length > 1)
                         {
-                            string lineTrim = line.Trim();
-
-                            // Ignore comment lines
-                            if (!lineTrim.StartsWith("#"))
+                            // Parse as hex, without 0x
+                            if (uint.TryParse(lineSplit[0].TrimStart('0', 'x'), NumberStyles.HexNumber, CultureInfo.CurrentCulture, out var hash))
                             {
-                                string[] lineSplit = lineTrim.Split(',');
-
-                                if (lineSplit.Length > 1)
-                                {
-                                    // Parse as hex, without 0x
-                                    if (uint.TryParse(lineSplit[0].TrimStart('0', 'x'), NumberStyles.HexNumber, CultureInfo.CurrentCulture, out var hash))
-                                    {
-                                        hashTable.Value[hash] = lineSplit[1];
-                                    }
-                                }
+                                hashTable.Value[hash] = lineSplit[1];
                             }
                         }
-                        catch
-                        {
-                            continue;
-                        }
                     }
-                }
-                catch
-                {
-                    continue;
                 }
             }
         }
@@ -230,24 +210,15 @@ namespace Cerberus.UI
             ClearScripts();
             SetProgressCount(files.Length);
 
+            
+
             foreach (var file in files)
             {
                 SetProgressMessage("Loading " + file);
                 LogIt("Loading " + file);
-                // Wrap in a Try/Catch because we need control of it after
-                var reader = new BinaryReader(new MemoryStream(File.ReadAllBytes(file)));
+                var reader = new Reader(file);
 
-                try
-                {
-                    ScriptFiles.Add(ScriptBase.LoadScript(reader, HashTables));
-                }
-                catch(Exception e)
-                {
-                    reader?.Dispose();
-                    LogIt("Failed to load " + file);
-                    LogIt(e);
-                    continue;
-                }
+                ScriptFiles.Add(ScriptBase.LoadScript(reader, HashTables));
 
                 if (!IncrementProgress())
                 {

@@ -90,11 +90,11 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="zlib.net">
-      <HintPath>..\Libraries\zlib.net.dll</HintPath>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Libraries\Reader.cs">
+      <Link>Reader.cs</Link>
+    </Compile>
     <Compile Include="Decompiler\Decompiler.cs" />
     <Compile Include="Decompiler\DecompilerBlocks\ElseBlock.cs" />
     <Compile Include="Decompiler\DecompilerBlocks\ElseIfBlock.cs" />
@@ -111,7 +111,6 @@
     <Compile Include="Decompiler\DecompilerBlocks\DevBlock.cs" />
     <Compile Include="FastFile.cs" />
     <Compile Include="Games\BlackOps3Metadata.cs" />
-    <Compile Include="Games\BlackOps2Script.cs" />
     <Compile Include="Games\BlackOps3Script.cs" />
     <Compile Include="CRC32.cs" />
     <Compile Include="Salsa20.cs" />

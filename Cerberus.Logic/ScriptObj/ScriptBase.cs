@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using BigEndianBinaryReader;
 
 namespace Cerberus.Logic
 {
@@ -35,12 +36,12 @@ namespace Cerberus.Logic
         /// <summary>
         /// Gets or Sets the Script Data Stream
         /// </summary>
-        public BinaryReader Reader { get; set; }
+        public Reader Reader { get; set; }
 
         /// <summary>
         /// Size of the Data Stream as a KB String
         /// </summary>
-        public string DisplaySize => string.Format("{0:0.000} KB", Reader.BaseStream.Position / 1000.0);
+        public string DisplaySize => string.Format("{0:0.000} KB", Reader.GetPosition() / 1000.0);
 
         /// <summary>
         /// Gets or Sets the Script Header
@@ -80,7 +81,7 @@ namespace Cerberus.Logic
         /// <summary>
         /// Initializes an instance of the Script Class
         /// </summary>
-        public ScriptBase(BinaryReader reader, Dictionary<uint, string> hashTable)
+        public ScriptBase(Reader reader, Dictionary<uint, string> hashTable)
         {
             Reader = reader;
             HashTable = hashTable;
@@ -91,11 +92,6 @@ namespace Cerberus.Logic
             LoadImports();
             LoadExports();
         }
-
-        /// <summary>
-        /// Initializes an instance of the Script Class
-        /// </summary>
-        public ScriptBase(Stream stream, Dictionary<uint, string> hashTable) : this(new BinaryReader(stream), hashTable) { }
 
         /// <summary>
         /// Loads the Header from the GSC File
@@ -354,22 +350,20 @@ namespace Cerberus.Logic
         /// </summary>
         public void Dispose()
         {
-            Reader.Dispose();
+            Reader.Close();
         }
 
         /// <summary>
         /// Loads the given script using the respective game class
         /// </summary>
         /// <param name="reader">Reader/Stream</param>
-        public static ScriptBase LoadScript(BinaryReader reader, Dictionary<string, Dictionary<uint, string>> hashTables)
+        public static ScriptBase LoadScript(Reader reader, Dictionary<string, Dictionary<uint, string>> hashTables)
         {
             // We can use the magic to determine game
             switch(reader.ReadUInt64())
             {
-                case 0x1C000A0D43534780:
+                case 0x804753430d0a0003:
                     return new BlackOps3Script(reader, hashTables["BlackOps3"]);
-                case 0x6000A0D43534780:
-                    return new BlackOps2Script(reader, hashTables["BlackOps2"]);
                 default:
                     throw new ArgumentException("Invalid Script Magic Number.", "Magic");
             }

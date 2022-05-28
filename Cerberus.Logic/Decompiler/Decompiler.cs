@@ -461,7 +461,7 @@ namespace Cerberus.Logic
                             (int)operation.Operands[0].Value));
                     Blocks.Add(switchBlock);
 
-                    Script.Reader.BaseStream.Position = switchBlock.EndOffset;
+                    Script.Reader.SetPosition(switchBlock.EndOffset);
                     var cases = Script.LoadEndSwitch();
 
                     for(int i = 0; i < cases.Count; i++)
@@ -603,12 +603,12 @@ namespace Cerberus.Logic
 
         private bool IsContinue(int ip, int offset)
         {
-            return Blocks.FindIndex(x => (x.StartOffset >= offset && x.EndOffset < offset) && x.ContinueOffset == offset && (x.StartOffset >= ip && x.EndOffset < ip)) >= 0;
+            return Blocks.FindIndex(x => (x.StartOffset <= offset && x.EndOffset > offset) && x.ContinueOffset == offset && (x.StartOffset <= ip && x.EndOffset > ip)) >= 0;
         }
 
         private bool IsBreak(int ip, int offset)
         {
-            return Blocks.FindIndex(x => (x.StartOffset >= offset && x.EndOffset < offset) && x.BreakOffset == offset && (x.StartOffset >= ip && x.EndOffset < ip)) >= 0;
+            return Blocks.FindIndex(x => (x.StartOffset <= offset && x.EndOffset > offset) && x.BreakOffset == offset && (x.StartOffset <= ip && x.EndOffset > ip)) >= 0;
         }
 
         private void DecompileBlock(DecompilerBlock decompilerBlock, int tabs)
@@ -701,7 +701,7 @@ namespace Cerberus.Logic
                             // Check for a negative jumps, is almost always a loop
                             if((int)Function.Operations[i].Operands[0].Value < 0)
                             {
-                                // Compute the jump location based as some games align the value
+                                // Compute the jump location
                                 var offset = Script.GetJumpLocation(
                                     Function.Operations[i].OpCodeOffset + Function.Operations[i].OpCodeSize, 
                                     (int)Function.Operations[i].Operands[0].Value);
@@ -1650,6 +1650,8 @@ namespace Cerberus.Logic
                             case ScriptOpCode.ScriptMethodCall:
                             case ScriptOpCode.ScriptMethodThreadCall:
                             case ScriptOpCode.ScriptThreadCall:
+                            case ScriptOpCode.CallBuiltin:
+                            case ScriptOpCode.CallBuiltinMethod:
                                 {
                                     var functionImport = Script.GetImport(operation.OpCodeOffset);
 
@@ -1673,7 +1675,8 @@ namespace Cerberus.Logic
                                     // Check for method calls
                                     if (
                                     operation.Metadata.OpCode == ScriptOpCode.ScriptMethodCall ||
-                                    operation.Metadata.OpCode == ScriptOpCode.ScriptMethodThreadCall)
+                                    operation.Metadata.OpCode == ScriptOpCode.ScriptMethodThreadCall ||
+                                    operation.Metadata.OpCode == ScriptOpCode.CallBuiltinMethod)
                                     {
                                         method = true;
                                     }
@@ -1683,6 +1686,13 @@ namespace Cerberus.Logic
                                 {
                                     functionName = (string)operation.Operands[0].Value;
                                     paramCount = (int)operation.Operands[1].Value;
+                                    break;
+                                }
+                            case ScriptOpCode.ClassFunctionThreadCall:
+                                {
+                                    functionName = (string)operation.Operands[0].Value;
+                                    paramCount = (int)operation.Operands[1].Value;
+                                    threaded = true;
                                     break;
                                 }
                             default:

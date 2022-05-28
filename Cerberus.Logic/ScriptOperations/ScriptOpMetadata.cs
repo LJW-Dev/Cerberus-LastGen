@@ -80,7 +80,7 @@ namespace Cerberus.Logic
             new ScriptOpMetadata(ScriptOpCode.JumpOnFalseExpr,                  ScriptOpType.JumpExpression,    ScriptOperandType.Int16),
             new ScriptOpMetadata(ScriptOpCode.JumpOnTrueExpr,                   ScriptOpType.JumpExpression,    ScriptOperandType.Int16),
             new ScriptOpMetadata(ScriptOpCode.Jump,                             ScriptOpType.Jump,              ScriptOperandType.Int16),
-            new ScriptOpMetadata(ScriptOpCode.Jump,                             ScriptOpType.Jump,              ScriptOperandType.Int16),
+            new ScriptOpMetadata(ScriptOpCode.JumpBack,                         ScriptOpType.Jump,              ScriptOperandType.Int16),
             new ScriptOpMetadata(ScriptOpCode.Inc,                              ScriptOpType.SingleOperand,     ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.Dec,                              ScriptOpType.SingleOperand,     ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.Bit_Or,                           ScriptOpType.DoubleOperand,     ScriptOperandType.None),
@@ -151,6 +151,7 @@ namespace Cerberus.Logic
             new ScriptOpMetadata(ScriptOpCode.GetWorldObject,                   ScriptOpType.Object,            ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.GetClassesObject,                 ScriptOpType.Object,            ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.ClassFunctionCall,                ScriptOpType.Call,              ScriptOperandType.Call),
+            new ScriptOpMetadata(ScriptOpCode.ClassFunctionThreadCall,          ScriptOpType.Call,              ScriptOperandType.Call),
             new ScriptOpMetadata(ScriptOpCode.Bit_Not,                          ScriptOpType.SingleOperand,     ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.GetWorld,                         ScriptOpType.StackPush,         ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.EvalLevelFieldVariable,           ScriptOpType.Variable,          ScriptOperandType.VariableName),
@@ -159,6 +160,8 @@ namespace Cerberus.Logic
             new ScriptOpMetadata(ScriptOpCode.EvalSelfFieldVariableRef,         ScriptOpType.VariableReference, ScriptOperandType.VariableName),
             new ScriptOpMetadata(ScriptOpCode.SuperEqual,                       ScriptOpType.Comparison,        ScriptOperandType.None),
             new ScriptOpMetadata(ScriptOpCode.SuperNotEqual,                    ScriptOpType.Comparison,        ScriptOperandType.None),
+            new ScriptOpMetadata(ScriptOpCode.GetClasses,                       ScriptOpType.StackPush,         ScriptOperandType.None),
+            new ScriptOpMetadata(ScriptOpCode.Count,                            ScriptOpType.Comparison,        ScriptOperandType.None),
         };
 
         /// <summary>

@@ -146,6 +146,7 @@ namespace Cerberus.Logic
         GetWorldObject,
         GetClassesObject,
         ClassFunctionCall,
+        ClassFunctionThreadCall,
         Bit_Not,
         GetWorld,
         EvalLevelFieldVariable,
@@ -154,6 +155,7 @@ namespace Cerberus.Logic
         EvalSelfFieldVariableRef,
         SuperEqual,
         SuperNotEqual,
+        GetClasses,
         Count,
 
         Invalid                               = 0xFF,

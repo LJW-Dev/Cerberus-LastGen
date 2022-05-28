@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.IO;
 using PhilLibX;
 using PhilLibX.IO;
+using BigEndianBinaryReader;
 
 namespace Cerberus.Logic
 {
@@ -16,14 +17,13 @@ namespace Cerberus.Logic
         /// </summary>
         public override string Game => "Black Ops III";
 
-        public BlackOps3Script(Stream stream, Dictionary<uint, string> hashTable) : base(stream, hashTable) { }
-        public BlackOps3Script(BinaryReader reader, Dictionary<uint, string> hashTable) : base(reader, hashTable) { }
+        public BlackOps3Script(Reader reader, Dictionary<uint, string> hashTable) : base(reader, hashTable) { }
 
         public override void LoadHeader()
         {
 
             // Ensure we're at the header (skip 8 byte magic)
-            Reader.BaseStream.Position = 8;
+            Reader.SetPosition(8);
 
             Header = new ScriptHeader()
             {
@@ -38,7 +38,7 @@ namespace Cerberus.Logic
                 FixupTableOffset       = Reader.ReadInt32(),
                 ProfileTableOffset     = Reader.ReadInt32(),
                 ByteCodeSize           = Reader.ReadInt32(),
-                NameOffset             = Reader.ReadInt32(),
+                NameOffset             = Reader.ReadInt16(),
                 StringCount            = Reader.ReadInt16(),
                 ExportsCount           = Reader.ReadInt16(),
                 ImportsCount           = Reader.ReadInt16(),
@@ -47,20 +47,20 @@ namespace Cerberus.Logic
                 DebugStringCount       = Reader.ReadInt16(),
                 IncludeCount           = Reader.ReadByte(),
                 AnimTreeCount          = Reader.ReadByte(),
-                Flags                  = Reader.ReadByte()
+                Flags                  = Reader.ReadInt32()
             };
 
             // Get name of this script from the header
-            Reader.BaseStream.Position = Header.NameOffset;
+            Reader.SetPosition(Header.NameOffset);
             FilePath = Reader.ReadNullTerminatedString();
 
             // Skip padding (header is 72 bytes in total)
-            Reader.BaseStream.Position = 72;
+            Reader.SetPosition(0x48);
         }
 
         public override void LoadStrings()
         {
-            Reader.BaseStream.Position = Header.StringTableOffset;
+            Reader.SetPosition(Header.StringTableOffset);
 
             Strings = new List<ScriptString>(Header.StringCount + Header.DebugStringCount);
 
@@ -68,12 +68,12 @@ namespace Cerberus.Logic
             {
                 var scriptString = new ScriptString()
                 {
-                    Offset = Reader.ReadInt32(),
+                    Offset = Reader.ReadUInt16(),
                     References = new List<int>()
                 };
 
                 var referenceCount = Reader.ReadByte();
-                Reader.BaseStream.Position += 3;
+                Reader.AddToPosition(1); //skip type
 
                 // We need to store the references as we'll use them
                 // for resolving strings instead of using the pointers
@@ -83,18 +83,18 @@ namespace Cerberus.Logic
                 }
 
                 // Store our current position as we'll need to return back here
-                var offset = Reader.BaseStream.Position;
-                Reader.BaseStream.Position = scriptString.Offset;
+                var offset = Reader.GetPosition();
+                Reader.SetPosition(scriptString.Offset);
 
                 scriptString.Value = Reader.ReadNullTerminatedString();
 
                 // Go back to the table
-                Reader.BaseStream.Position = offset;
+                Reader.SetPosition(offset);
 
                 Strings.Add(scriptString);
             }
 
-            Reader.BaseStream.Position = Header.DebugStringTableOffset;
+            Reader.SetPosition(Header.DebugStringTableOffset);
 
             // For dev/debug strings we only load them for the purposes
             // of satisifying the string look up
@@ -105,12 +105,12 @@ namespace Cerberus.Logic
                 var scriptString = new ScriptString()
                 {
                     Value = "Dev Block strings are not supported",
-                    Offset = Reader.ReadInt32(),
+                    Offset = Reader.ReadInt16(),
                     References = new List<int>()
                 };
 
                 var referenceCount = Reader.ReadByte();
-                Reader.BaseStream.Position += 3;
+                Reader.AddToPosition(1); //skip type
 
                 // We need to store the references as we'll use them
                 // for resolving strings instead of using the pointers
@@ -125,7 +125,7 @@ namespace Cerberus.Logic
 
         public override void LoadExports()
         {
-            Reader.BaseStream.Position = Header.ExportTableOffset;
+            Reader.SetPosition(Header.ExportTableOffset);
 
             Exports = new List<ScriptExport>(Header.ExportsCount);
 
@@ -142,20 +142,21 @@ namespace Cerberus.Logic
                     ParameterCount = Reader.ReadByte(),
                     Flags          = (ScriptExportFlags)Reader.ReadByte()
                 };
-                Reader.BaseStream.Position += 2;
+                Reader.AddToPosition(2);
                 var crc32 = new CRC32();
 
                 // Store our current position as we'll need to return back here
-                // (+ 2 to skip padding)
-                var offset = Reader.BaseStream.Position + 2;
-                Reader.BaseStream.Position = export.ByteCodeOffset;
+                var offset = Reader.GetPosition();
+                Reader.SetPosition(export.ByteCodeOffset);
                 var byteCodeSize = 0;
 
                 // From kokole/Nukem's, brute force via CRC32
                 // This will only work on files dumped from a fast file
+                //this gets the size of the function bytecode
                 while (true)
                 {
-                    crc32.Update(Reader.ReadByte());
+                    byte value = Reader.ReadByte();
+                    crc32.Update(value);
 
                     // If we hit, we're done
                     if (crc32.Value == export.Checksum)
@@ -172,23 +173,15 @@ namespace Cerberus.Logic
                 LoadFunction(export);
 
                 // Go back to the table
-                Reader.BaseStream.Position = offset;
+                Reader.SetPosition(offset);
 
                 Exports.Add(export);
-            }
-
-            for(int i = 0; i < Header.ExportsCount; i++)
-            {
-                Exports[i].ByteCodeSize = (i == Header.ExportsCount - 1) ? byteCodeEnd - Exports[i].ByteCodeOffset : Exports[i + 1].ByteCodeOffset - Exports[i].ByteCodeOffset;
-
-                Reader.BaseStream.Position = Exports[i].ByteCodeOffset;
-                LoadFunction(Exports[i]);
             }
         }
 
         public override void LoadImports()
         {
-            Reader.BaseStream.Position = Header.ImportTableOffset;
+            Reader.SetPosition(Header.ImportTableOffset);
 
             Imports = new List<ScriptImport>(Header.ImportsCount);
 
@@ -203,7 +196,7 @@ namespace Cerberus.Logic
 
                 var referenceCount = Reader.ReadInt16();
                 import.ParameterCount = Reader.ReadByte();
-                Reader.BaseStream.Position += 1;
+                Reader.AddToPosition(1); //skip flags
 
                 for (int j = 0; j < referenceCount; j++)
                 {
@@ -216,13 +209,19 @@ namespace Cerberus.Logic
 
         public override void LoadIncludes()
         {
-            Reader.BaseStream.Position = Header.IncludeTableOffset;
+            Reader.SetPosition(Header.IncludeTableOffset);
 
             Includes = new List<ScriptInclude>(Header.IncludeCount);
 
             for (int i = 0; i < Header.IncludeCount; i++)
             {
-                Includes.Add(new ScriptInclude(Reader.PeekNullTerminatedString(Reader.ReadInt32())));
+                int IncludePos = Reader.ReadInt32();
+                long Pos = Reader.GetPosition();
+                Reader.SetPosition(IncludePos);
+                Includes.Add(new ScriptInclude(Reader.ReadNullTerminatedString()));
+                Reader.SetPosition(Pos);
+
+                //Includes.Add(new ScriptInclude(Reader.PeekNullTerminatedString(Reader.ReadInt32())));
             }
 
             Includes.Sort();
@@ -230,36 +229,20 @@ namespace Cerberus.Logic
 
         public override ScriptOp LoadOperation(int offset)
         {
-            Reader.BaseStream.Position = offset;
-            var opCodeIndex = Reader.ReadUInt16();
-            ScriptOp operation;
+            Reader.SetPosition(offset);
+            var opCodeIndex = Reader.ReadByte();
+            var opCode = OpCodeTable[opCodeIndex];
 
-            // This is literally close to how Black Ops 3 handles it
-            // as in, the value is literally an index
-            if((opCodeIndex & 0x2000) == 0)
-            {
-                if (opCodeIndex > 0x4000)
-                {
-                    return null;
-                }
-
-                var opCode = OpCodeTable[opCodeIndex];
-
-                if (opCode == ScriptOpCode.Invalid)
-                {
-                    return null;
-                }
-
-                operation = new ScriptOp()
-                {
-                    Metadata = ScriptOpMetadata.OperationInfo[(int)opCode],
-                    OpCodeOffset = (int)Reader.BaseStream.Position - 2,
-                };
-            }
-            else
+            if (opCode == ScriptOpCode.Invalid)
             {
                 throw new ArgumentException("Invalid Op Code");
             }
+
+            ScriptOp operation = new ScriptOp()
+            {
+                Metadata = ScriptOpMetadata.OperationInfo[(int)opCode],
+                OpCodeOffset = (int)Reader.GetPosition() - 1,
+            };
 
             // Use a type rather than large switch for each operation
             // so we can easily fix bugs and adjust across multiple op codes
@@ -272,7 +255,7 @@ namespace Cerberus.Logic
                     }
                 case ScriptOperandType.Int8:
                     {
-                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadSByte()));
+                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadByte()));
                         break;
                     }
                 case ScriptOperandType.UInt8:
@@ -289,13 +272,13 @@ namespace Cerberus.Logic
                     }
                 case ScriptOperandType.Int16:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 2);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 2));
                         operation.Operands.Add(new ScriptOpOperand(Reader.ReadInt16()));
                         break;
                     }
                 case ScriptOperandType.UInt16:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 2);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 2));
                         if (operation.Metadata.OpCode == ScriptOpCode.GetNegUnsignedShort)
                         {
                             operation.Operands.Add(new ScriptOpOperand(Reader.ReadUInt16() * -1));
@@ -308,32 +291,32 @@ namespace Cerberus.Logic
                     }
                 case ScriptOperandType.Int32:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                         operation.Operands.Add(new ScriptOpOperand(Reader.ReadInt32()));
                         break;
                     }
                 case ScriptOperandType.UInt32:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                         operation.Operands.Add(new ScriptOpOperand(Reader.ReadUInt32()));
                         break;
                     }
                 case ScriptOperandType.Hash:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                         operation.Operands.Add(new ScriptOpOperand("\"" + GetHashValue(Reader.ReadUInt32(), "hash_") + "\""));
                         break;
                     }
                 case ScriptOperandType.Float:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
-                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadSingle()));
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
+                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadFloat()));
                         break;
                     }
                 case ScriptOperandType.Vector:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
-                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadSingle()));
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
+                        operation.Operands.Add(new ScriptOpOperand(Reader.ReadFloat()));
                         break;
                     }
                 case ScriptOperandType.VectorFlags:
@@ -355,19 +338,24 @@ namespace Cerberus.Logic
                         switch (operation.Metadata.OpCode)
                         {
                             case ScriptOpCode.GetString:
-                                Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
-                                operation.Operands.Add(new ScriptOpOperand("\"" + GetString((int)Reader.BaseStream.Position)?.Value + "\""));
-                                Reader.BaseStream.Position += 4;
+                                Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 2));
+                                operation.Operands.Add(new ScriptOpOperand("\"" + GetString((int)Reader.GetPosition())?.Value + "\""));
+                                Reader.AddToPosition(2);
                                 break;
                             case ScriptOpCode.GetIString:
-                                Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
-                                operation.Operands.Add(new ScriptOpOperand("&\"" + GetString((int)Reader.BaseStream.Position)?.Value + "\""));
-                                Reader.BaseStream.Position += 4;
+                                Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 2));
+                                operation.Operands.Add(new ScriptOpOperand("&\"" + GetString((int)Reader.GetPosition())?.Value + "\""));
+                                Reader.AddToPosition(2);
                                 break;
                             case ScriptOpCode.GetAnimation:
-                                Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 8);
-                                operation.Operands.Add(new ScriptOpOperand("%" + Reader.PeekNullTerminatedString(Reader.ReadInt32())));
-                                Reader.BaseStream.Position += 4;
+                                Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
+
+                                int AnimPos = Reader.ReadInt32();
+                                long Pos = Reader.GetPosition();
+                                Reader.SetPosition(AnimPos);
+                                operation.Operands.Add(new ScriptOpOperand("%" + Reader.ReadNullTerminatedString()));
+                                Reader.SetPosition(Pos);
+                                //operation.Operands.Add(new ScriptOpOperand("%" + Reader.PeekNullTerminatedString(Reader.ReadInt32())));
                                 break;
                         }
 
@@ -375,7 +363,7 @@ namespace Cerberus.Logic
                     }
                 case ScriptOperandType.VariableName:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
 
                         var name = GetHashValue(Reader.ReadUInt32(), "var_");
                         operation.Operands.Add(new ScriptOpOperand(name));
@@ -383,27 +371,25 @@ namespace Cerberus.Logic
                     }
                 case ScriptOperandType.FunctionPointer:
                     {
-                        Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 8);
+                        Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                         operation.Operands.Add(new ScriptOpOperand("&" + GetHashValue(Reader.ReadUInt32(), "function_")));
-                        Reader.BaseStream.Position += 4;
                         break;
                     }
                 case ScriptOperandType.Call:
                     {
-                        if (operation.Metadata.OpCode == ScriptOpCode.ClassFunctionCall)
+                        if (operation.Metadata.OpCode == ScriptOpCode.ClassFunctionCall || operation.Metadata.OpCode == ScriptOpCode.ClassFunctionThreadCall)
                         {
                             var paramterCount = Reader.ReadByte();
-                            Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                            Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                             operation.Operands.Add(new ScriptOpOperand(GetHashValue(Reader.ReadUInt32(), "function_")));
                             operation.Operands.Add(new ScriptOpOperand(paramterCount));
                         }
                         else
                         {
                             // Skip param count, it isn't stored here until in memory
-                            Reader.BaseStream.Position += 1;
-                            Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 8);
+                            Reader.AddToPosition(1);
+                            Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                             operation.Operands.Add(new ScriptOpOperand(GetHashValue(Reader.ReadUInt32(), "function_")));
-                            Reader.BaseStream.Position += 4;
                         }
                         break;
                     }
@@ -413,9 +399,9 @@ namespace Cerberus.Logic
 
                         for(int i = 0; i < varCount; i++)
                         {
-                            Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+                            Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
                             operation.Operands.Add(new ScriptOpOperand(GetHashValue(Reader.ReadUInt32(), "var_")));
-                            Reader.BaseStream.Position += 1;
+                            Reader.AddToPosition(1); //padding
                         }
 
                         break;
@@ -436,37 +422,32 @@ namespace Cerberus.Logic
                     }
             }
 
-            // Ensure we're at the next op, all operations are aligned to 2 bytes
-            Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 2);
-
-            operation.OpCodeSize = (int)Reader.BaseStream.Position - offset;
+            operation.OpCodeSize = (int)Reader.GetPosition() - offset;
 
             return operation;
         }
 
         public override int GetJumpLocation(int from, int to)
         {
-            // We must align it to 2 bytes, for some reason they store
-            // misaligned values...
-            return from + (short)Utility.AlignValue((ushort)to, 2);
+            return from + to;
         }
 
         public override List<ScriptOpSwitch> LoadEndSwitch()
         {
             List<ScriptOpSwitch> switches = new List<ScriptOpSwitch>();
-            Reader.BaseStream.Position += Utility.ComputePadding((int)Reader.BaseStream.Position, 4);
+            Reader.AddToPosition(Utility.ComputePadding((int)Reader.GetPosition(), 4));
             var switchCount = Reader.ReadInt32();
 
             for (int i = 0; i < switchCount; i++)
             {
-                var scriptString = GetString((int)Reader.BaseStream.Position);
+                var scriptString = GetString((int)Reader.GetPosition());
                 string switchString;
 
                 // For Bo3 it seems the only way to check if it's a string
                 // is to check for a reference in the string section...
                 if (scriptString != null)
                 {
-                    Reader.BaseStream.Position += 4;
+                    Reader.AddToPosition(4);
                     switchString = "\"" + scriptString.Value + "\"";
                 }
                 else
@@ -489,7 +470,7 @@ namespace Cerberus.Logic
                 switches.Add(new ScriptOpSwitch()
                 {
                     CaseValue = switchString,
-                    ByteCodeOffset = (int)Reader.BaseStream.Position + Reader.ReadInt32() + 4,
+                    ByteCodeOffset = (int)Reader.GetPosition() + Reader.ReadInt32() + 4,
                     OriginalIndex = i
                 });
             }
